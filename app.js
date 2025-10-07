@@ -8,14 +8,23 @@ document.addEventListener("DOMContentLoaded", () => {
   const brandInput = document.getElementById("brandList");
   const tldInput = document.getElementById("tldList");
 
+  // 👇 NUEVO: Checkbox para elegir modo
+  const modeToggle = document.createElement("label");
+  modeToggle.className = "text-sm text-gray-300 block mb-2";
+  modeToggle.innerHTML = `
+    <input type="checkbox" id="modeLight" checked> 🔎 Análisis rápido (solo DNS + Certificados)
+  `;
+  output.parentNode.insertBefore(modeToggle, analyzeBtn);
+
   analyzeBtn.addEventListener("click", async () => {
     const brand = brandInput.value.trim();
     const tlds = tldInput.value.trim();
+    const lightMode = document.getElementById("modeLight")?.checked ? "light" : "deep"; // 👈 nuevo
 
     if (!brand) return alert("Introduce una marca o dominio");
 
     output.innerHTML = `
-      <div class="text-gray-400 mb-2">⏳ Analizando: <span class="text-sky-300">${brand}</span></div>
+      <div class="text-gray-400 mb-2">⏳ Analizando: <span class="text-sky-300">${brand}</span> (${lightMode})</div>
       <div id="liveLog" class="text-xs text-gray-400 bg-slate-800 p-2 rounded h-32 overflow-auto mb-3"></div>
       <table id="resultTable" class="w-full text-sm">
         <thead>
@@ -42,9 +51,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const fetches = [];
 
     for (let i = 0; i < totalChunks; i++) {
+      // 👇 se añade mode al URL
       const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
         tlds
-      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}`;
+      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}&mode=${lightMode}`;
       fetches.push(runChunk(url, i));
     }
 
@@ -88,7 +98,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (msg.status === "info") {
               log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
             } else if (msg.status === "checking") {
-              progress.value += 0.1; // progreso simple
+              progress.value += 0.1;
             } else if (msg.status === "found") {
               found++;
               addRow(msg, tbody);
