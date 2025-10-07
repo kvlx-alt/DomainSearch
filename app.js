@@ -39,7 +39,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     progress.value = 0;
 
-    const resp = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
+    const whitelist = document.getElementById("whitelistInput")?.value.trim() || "";
+    const resp = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}&whitelist=${encodeURIComponent(whitelist)}`);
+
     if (!resp.ok) {
       output.innerHTML = `<div class="text-red-400">Error HTTP ${resp.status}</div>`;
       return;
@@ -134,3 +136,4 @@ function getRiskClass(score) {
   if (score >= 30) return { cls: "risk-med", label: `Medio (${score})` };
   return { cls: "risk-low", label: `Bajo (${score})` };
 }
+
