@@ -1,0 +1,56 @@
+
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Analizador de Dominios Sospechosos</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Analizador de Dominios Sospechosos (GitHub Pages)</h1>
+      <p class="muted">Genera permutaciones tipo typosquatting y muestra solo las que resuelven DNS. Usa crt.sh y RDAP.</p>
+    </header>
+
+    <section class="controls">
+      <label>Lista de marcas / dominios (una por línea):</label>
+      <textarea id="brandsInput" placeholder="bershka.com&#10;zara.com"></textarea>
+      <div class="row">
+        <div>
+          <label>TLDs a probar (coma separadas):</label>
+          <input id="tldsInput" value=".com,.net,.org,.es,.info" />
+        </div>
+        <div class="buttons">
+          <button id="btnRun" class="primary">Analizar</button>
+          <button id="btnClear">Limpiar</button>
+        </div>
+      </div>
+      <div id="progressWrap" class="progress-wrap" hidden>
+        <div id="progressText">Preparando...</div>
+        <div class="progressbar"><div id="progressBar" style="width:0%"></div></div>
+      </div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+
+    <section>
+      <table id="resultTable" class="result-table">
+        <thead>
+          <tr>
+            <th>Dominio</th><th>Tipologías</th><th>Clasificación</th><th>Fuentes</th>
+            <th>Fecha creación</th><th>Registrante</th><th>Notas</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <footer>
+      <small>Nota: llamadas a crt.sh / rdap.org y DoH públicas pueden tener límites de tasa y CORS.</small>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
