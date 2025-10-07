@@ -1,5 +1,5 @@
 /* ============================================================
-   Analizador de Dominios Sospechosos - Frontend JS (v5)
+   Analizador de Dominios Sospechosos - Frontend JS (v6)
    Interfaz SOC con RDAP + ASN + crt.sh + AbuseIPDB + Modal
    ============================================================ */
 
@@ -47,7 +47,18 @@ document.addEventListener("DOMContentLoaded", () => {
         const data = await res.json();
         if (data.error) throw new Error(data.error);
 
-        for (const d of data.encontrados || []) {
+        // tolerar 1 o varios dominios
+        const encontrados = Array.isArray(data.encontrados)
+          ? data.encontrados
+          : data.encontrados
+          ? [data.encontrados]
+          : [];
+
+        if (!encontrados.length) {
+          html += `<tr><td>${escapeHTML(brand)}</td><td colspan="8" class="text-gray-400">Sin resultados válidos</td></tr>`;
+        }
+
+        for (const d of encontrados) {
           html += formatDomainRow(d, brand);
         }
 
@@ -64,9 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".viewBtn").forEach(btn => {
       btn.addEventListener("click", e => {
         const details = JSON.parse(decodeURIComponent(e.target.dataset.details));
-        modalTitle.textContent = details.dominio;
-        modalBody.textContent = JSON.stringify(details, null, 2);
-        modal.classList.remove("hidden");
+        openDetailModal(details);
       });
     });
   });
@@ -80,7 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
   closeModal.addEventListener("click", () => modal.classList.add("hidden"));
 });
 
-/* ------------------- Utilidades ------------------- */
+/* ===================== UTILIDADES ===================== */
 function formatDomainRow(d, brand) {
   const fuentes = d.certificados > 0 ? "crt.sh" : "-";
   const risk = getRiskClass(d.abuse_score);
@@ -89,7 +98,6 @@ function formatDomainRow(d, brand) {
   const ipList = (d.registros || []).join(", ") + asn;
   const certs = d.certificados || 0;
 
-  // resaltado de marca
   let domainHTML = escapeHTML(d.dominio);
   if (brand) {
     const re = new RegExp(escapeRegExp(brand), "ig");
@@ -111,6 +119,32 @@ function formatDomainRow(d, brand) {
   </tr>`;
 }
 
+function openDetailModal(d) {
+  const modal = document.getElementById("detailModal");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalBody = document.getElementById("modalBody");
+
+  modalTitle.textContent = d.dominio || "Detalles del dominio";
+
+  modalBody.innerHTML = `
+    <table class="w-full text-sm">
+      <tr><td class="text-sky-300 font-semibold">Dominio</td><td>${escapeHTML(d.dominio)}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">IPs</td><td>${escapeHTML((d.registros||[]).join(", ")||"-")}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">ASN</td><td>${escapeHTML(d.asn_org||"-")}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">País</td><td>${escapeHTML(d.geo?.country||"-")}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Registrante</td><td>${escapeHTML(d.registrante||d.rdap?.registrante||"-")}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Creación</td><td>${formatDate(d.fecha_creacion||d.rdap?.fecha_creacion)}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Últ. Certificado</td><td>${formatDate(d.fecha_cert_reciente)}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Certificados</td><td>${d.certificados||0}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Emisores</td><td>${(d.emisores||[]).join("<br>")||"-"}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Abuse Score</td><td>${d.abuse_score!=null?d.abuse_score:"-"}</td></tr>
+      <tr><td class="text-sky-300 font-semibold">Notas</td><td>${(d.notas||[]).join("<br>")||"-"}</td></tr>
+    </table>
+  `;
+
+  modal.classList.remove("hidden");
+}
+
 function getRiskClass(score) {
   if (score == null) return { cls: "risk-low", label: "-" };
   if (score >= 60) return { cls: "risk-high", label: `Alto (${score})` };
@@ -123,7 +157,6 @@ function formatDate(dateStr) {
   const d = new Date(dateStr);
   return isNaN(d) ? "-" : d.toISOString().split("T")[0];
 }
-
 function escapeHTML(str) {
   return str ? str.replace(/[&<>'"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;" }[c])) : "";
 }
