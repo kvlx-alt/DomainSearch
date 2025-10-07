@@ -1,105 +1,115 @@
-// app.js - Frontend para GitHub Pages
-// Conecta al Worker: https://domain-analyzer-worker.gitsearch.workers.dev
-// Desarrollado por kvzlx / ChatGPT
+/* ============================================================
+   Analizador de Dominios Sospechosos - Frontend JS (v3)
+   Funciona con Cloudflare Worker (v2 avanzado o v2 optimizado)
+   ============================================================ */
 
-const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // tu worker activo
+const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // ← tu Worker
 
-const $ = (sel) => document.querySelector(sel);
+document.addEventListener("DOMContentLoaded", () => {
+  const analyzeBtn = document.getElementById("analyzeBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const brandInput = document.getElementById("brandList");
+  const tldInput = document.getElementById("tldList");
+  const output = document.getElementById("results");
+  const progress = document.getElementById("progressBar");
 
-// ==== UI Helpers ====
-function log(msg) {
-  $("#log").textContent = msg;
-}
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
+  analyzeBtn.addEventListener("click", async () => {
+    const brands = brandInput.value
+      .split("\n")
+      .map(b => b.trim())
+      .filter(b => b.length > 0);
+    const tlds = tldInput.value.trim();
 
-// ==== Lógica principal ====
-async function analyzeBrand(brand) {
-  const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`Error ${resp.status}: ${resp.statusText}`);
-  const data = await resp.json();
-  return data;
-}
-
-// ==== Renderización ====
-function renderResults(data) {
-  const tbody = $("#resultTable tbody");
-  tbody.innerHTML = "";
-
-  if (!data || !data.encontrados || data.encontrados.length === 0) {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `<td colspan="7" style="text-align:center;color:#666;">No se detectaron dominios sospechosos válidos.</td>`;
-    tbody.appendChild(tr);
-    return;
-  }
-
-  for (const res of data.encontrados) {
-    const tr = document.createElement("tr");
-    const notas = res.notas && res.notas.length ? res.notas.join(" | ") : "-";
-    const colorClass =
-      res.clasificacion.includes("clara")
-        ? "clear"
-        : res.clasificacion.includes("dudosa")
-        ? "doubt"
-        : "irrelevant";
-
-    tr.innerHTML = `
-      <td><strong>${res.dominio}</strong><details><summary>Detalles</summary><pre>${JSON.stringify(res, null, 2)}</pre></details></td>
-      <td>${res.tipologia || "Typosquatting"}</td>
-      <td><span class="badge ${colorClass}">${res.clasificacion}</span></td>
-      <td>${res.certificados > 0 ? "crt.sh" : "-"}</td>
-      <td>${res.fecha_creacion || "-"}</td>
-      <td>${res.registrante || "-"}</td>
-      <td>${notas}</td>`;
-    tbody.appendChild(tr);
-  }
-}
-
-// ==== Controlador de flujo ====
-$("#btnRun").addEventListener("click", async () => {
-  const raw = $("#brandsInput").value.trim();
-  if (!raw) {
-    alert("⚠️ Ingresa una o más marcas o dominios (una por línea)");
-    return;
-  }
-
-  const lines = raw.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
-  const total = lines.length;
-
-  const tbody = $("#resultTable tbody");
-  tbody.innerHTML = "";
-  $("#progressWrap").hidden = false;
-  $("#progressText").textContent = `0 / ${total}`;
-  $("#progressBar").style.width = "0%";
-  log("Iniciando análisis remoto...");
-
-  for (let i = 0; i < lines.length; i++) {
-    const brand = lines[i];
-    $("#progressText").textContent = `${i + 1} / ${total}`;
-    $("#progressBar").style.width = `${Math.round(((i + 1) / total) * 100)}%`;
-
-    try {
-      const data = await analyzeBrand(brand);
-      renderResults(data);
-    } catch (e) {
-      console.error(e);
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td colspan="7" style="color:red;">Error analizando ${brand}: ${e.message}</td>`;
-      tbody.appendChild(tr);
+    if (!brands.length) {
+      alert("Introduce al menos una marca o dominio");
+      return;
     }
 
-    await sleep(1000); // pequeña pausa para evitar saturar el Worker
+    output.innerHTML = "⏳ Analizando dominios...";
+    progress.value = 0;
+
+    let html = `<table><thead>
+      <tr>
+        <th>Dominio</th>
+        <th>Tipologías</th>
+        <th>Clasificación</th>
+        <th>Fuentes</th>
+        <th>Fecha creación</th>
+        <th>Expira</th>
+        <th>Registrante</th>
+        <th>Último certificado</th>
+        <th>Notas</th>
+      </tr></thead><tbody>`;
+
+    for (let i = 0; i < brands.length; i++) {
+      const brand = brands[i];
+      try {
+        const res = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        if (data.error) throw new Error(data.error);
+
+        if (Array.isArray(data.encontrados) && data.encontrados.length > 0) {
+          for (const d of data.encontrados) {
+            html += formatDomainRow(d);
+          }
+        } else {
+          html += `<tr><td>${brand}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>Sin resultados válidos</td></tr>`;
+        }
+
+        progress.value = ((i + 1) / brands.length) * 100;
+      } catch (e) {
+        html += `<tr><td>${brand}</td><td>-</td><td>Error</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>${escapeHTML(e.message)}</td></tr>`;
+      }
+    }
+
+    html += "</tbody></table>";
+    output.innerHTML = html;
+    progress.value = 100;
+  });
+
+  clearBtn.addEventListener("click", () => {
+    brandInput.value = "";
+    output.innerHTML = "";
+    progress.value = 0;
+  });
+});
+
+/* ------------------- Utilidades ------------------- */
+
+function formatDomainRow(d) {
+  const tipologia = "Typosquatting";
+  const fuentes = d.certificados > 0 ? "crt.sh" : "-";
+
+  return `<tr>
+    <td><a href="https://${escapeHTML(d.dominio)}" target="_blank">${escapeHTML(d.dominio)}</a></td>
+    <td>${tipologia}</td>
+    <td>${escapeHTML(d.clasificacion || "-")}</td>
+    <td>${fuentes}</td>
+    <td>${formatDate(d.fecha_creacion)}</td>
+    <td>${formatDate(d.fecha_expiracion)}</td>
+    <td>${escapeHTML(d.registrante || "-")}</td>
+    <td>${formatDate(d.fecha_cert_reciente)}</td>
+    <td>${d.notas && d.notas.length ? escapeHTML(d.notas.join(", ")) : "-"}</td>
+  </tr>`;
+}
+
+function formatDate(dateStr) {
+  if (!dateStr) return "-";
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d)) return "-";
+    return d.toISOString().split("T")[0];
+  } catch {
+    return "-";
   }
+}
 
-  $("#progressWrap").hidden = true;
-  log("✅ Análisis completado");
-});
-
-// ==== Limpiar ====
-$("#btnClear").addEventListener("click", () => {
-  $("#brandsInput").value = "";
-  $("#resultTable tbody").innerHTML = "";
-  log("");
-});
+function escapeHTML(str) {
+  return str
+    ? str.replace(/[&<>'"]/g, c =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])
+      )
+    : "";
+}
