@@ -36,6 +36,12 @@
         <div>
           <label class="block text-sm text-sky-200 font-semibold mb-1">TLDs</label>
           <input id="tldList" class="w-full rounded p-2 bg-slate-800 text-white" value=".com,.net,.org,.es,.info"/>
+<div class="mt-4">
+  <label class="block text-sm text-sky-200 font-semibold mb-1">Exclusiones (palabras o dominios a ignorar, separadas por coma)</label>
+  <input id="whitelistInput" class="w-full rounded p-2 bg-slate-800 text-white" placeholder="ibercaja.es, ecopetrol.com, original, oficial">
+</div>
+
+          
           <div class="flex gap-2 mt-4">
             <button id="analyzeBtn" class="btn btn-primary">Analizar</button>
             <button id="clearBtn" class="btn btn-secondary">Limpiar</button>
@@ -63,3 +69,4 @@
   <script src="app.js" defer></script>
 </body>
 </html>
+
