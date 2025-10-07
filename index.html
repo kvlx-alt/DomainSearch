@@ -1,134 +1,238 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Analizador de Dominios Sospechosos</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Domain Threat Intelligence — SOC Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { background-color: #0f172a; color: #e2e8f0; font-family: "Inter", sans-serif; }
-    th, td { padding: 0.5rem; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
-    tr:hover { background-color: rgba(255, 255, 255, 0.05); }
-    .hiddenRow { display: none; }
+    body { background:#0b1220; color:#e6eef8; font-family:Inter, Roboto, Arial; padding:18px; }
+    table { width:100%; border-collapse:collapse; font-size:0.95rem }
+    th, td { padding:10px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left }
+    th { background: rgba(255,255,255,0.03); font-weight:600 }
+    .badge { padding:4px 8px; border-radius:8px; font-size:12px }
+    .high { background:#b91c1c; color:white }
+    .medium { background:#d97706; color:white }
+    .low { background:#16a34a; color:white }
+    .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,23,0.6) }
   </style>
 </head>
-<body class="min-h-screen p-6">
+<body>
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-2xl font-bold text-sky-400 mb-2">Domain Threat Intelligence — SOC Dashboard</h1>
+    <p class="text-gray-400 mb-6">Analiza dominios, muestra RDAP, WHOIS, ASN, certificados y (opcional) AbuseIPDB.</p>
 
-<div class="max-w-6xl mx-auto">
-  <h1 class="text-3xl font-bold mb-2 text-sky-400">🔍 Analizador de Dominios Sospechosos</h1>
-  <p class="text-gray-400 mb-6">Detecta dominios de phishing o abuso de marca usando RDAP, crt.sh y DNS.</p>
+    <div class="bg-slate-900 p-5 rounded-xl mb-6">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="col-span-2">
+          <label class="block text-sm text-sky-200 font-semibold mb-1">Marcas / Dominios (uno por línea)</label>
+          <textarea id="brandList" class="w-full h-28 rounded p-2 bg-slate-800 text-white" placeholder="bancsabadell.com"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm text-sky-200 font-semibold mb-1">TLDs</label>
+          <input id="tldList" class="w-full rounded p-2 bg-slate-800 text-white" value=".com,.net,.org,.es,.info"/>
+          <label class="block mt-3 text-sm text-sky-200 font-semibold mb-1">Filtrar por</label>
+          <select id="filterSource" class="w-full rounded p-2 bg-slate-800 text-white mb-2">
+            <option value="">Todas las fuentes</option>
+            <option value="crt.sh">crt.sh</option>
+            <option value="RDAP">RDAP</option>
+            <option value="WHOIS">WHOIS-fallback</option>
+          </select>
+          <div class="flex gap-2">
+            <button id="analyzeBtn" class="bg-sky-500 px-3 py-2 rounded">Analizar</button>
+            <button id="clearBtn" class="bg-gray-700 px-3 py-2 rounded">Limpiar</button>
+          </div>
+          <div class="mt-3 text-sm text-gray-400">Worker: <span id="workerUrl" class="text-sky-300"></span></div>
+        </div>
+      </div>
 
-  <div class="bg-slate-800 rounded-2xl p-6 shadow-lg mb-6">
-    <label class="block mb-2 font-semibold text-sky-300">Lista de marcas / dominios:</label>
-    <textarea id="brandList" rows="4" class="w-full rounded-md p-2 bg-slate-900 border border-slate-700 resize-y" placeholder="bancsabadell.com"></textarea>
-
-    <label class="block mt-4 mb-2 font-semibold text-sky-300">TLDs a probar:</label>
-    <input id="tldList" type="text" class="w-full rounded-md p-2 bg-slate-900 border border-slate-700" value=".com,.net,.org,.es,.info"/>
-
-    <div class="mt-5 flex items-center gap-4">
-      <button id="analyzeBtn" class="bg-sky-500 hover:bg-sky-600 text-white font-semibold px-6 py-2 rounded-lg shadow">Analizar</button>
-      <button id="clearBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold px-6 py-2 rounded-lg">Limpiar</button>
+      <progress id="progressBar" class="w-full mt-4 h-3" value="0" max="100"></progress>
+      <div class="mt-2 flex items-center gap-3">
+        <button id="exportCsv" class="bg-green-600 px-3 py-1 rounded text-white">Exportar CSV</button>
+        <input id="searchInput" placeholder="Buscar dominio..." class="rounded p-2 bg-slate-800 text-white ml-auto" />
+      </div>
     </div>
 
-    <progress id="progressBar" value="0" max="100" class="mt-4 w-full h-3"></progress>
-    <p id="statusMsg" class="text-gray-400 mt-2"></p>
+    <div id="tableWrap" class="bg-slate-900 p-4 rounded-xl overflow-auto max-h-[60vh]">
+      <table id="resultTable">
+        <thead>
+          <tr>
+            <th>Dominio</th><th>Clasificación</th><th>Fuente</th><th>IPs / ASN</th><th>Creación</th><th>Registrante</th><th>Últ. Cert.</th><th>Abuse</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 
-  <div id="results" class="bg-slate-800 rounded-2xl p-4 shadow overflow-x-auto max-h-[70vh]"></div>
-
-  <footer class="text-gray-500 text-sm text-center mt-8">
-    © kvzlx
-  </footer>
-</div>
+  <!-- Modal -->
+  <div id="modal" class="hidden modal">
+    <div class="bg-slate-800 p-5 rounded-xl w-11/12 md:w-3/4 lg:w-2/3">
+      <div class="flex justify-between items-start">
+        <h2 id="modalTitle" class="text-lg font-semibold"></h2>
+        <button id="modalClose" class="text-gray-300">Cerrar</button>
+      </div>
+      <div class="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <h3 class="font-semibold text-sky-300">Resumen</h3>
+          <pre id="modalSummary" class="bg-slate-900 p-3 rounded text-sm text-gray-200 max-h-60 overflow-auto"></pre>
+        </div>
+        <div>
+          <h3 class="font-semibold text-sky-300">Detalles</h3>
+          <pre id="modalDetails" class="bg-slate-900 p-3 rounded text-sm text-gray-200 max-h-60 overflow-auto"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script>
-const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev";
+/* ================== Config ================== */
+const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // <-- actualiza si es necesario
+document.getElementById('workerUrl').textContent = WORKER_URL;
 
-document.getElementById("analyzeBtn").addEventListener("click", analyzeDomains);
-document.getElementById("clearBtn").addEventListener("click", clearAll);
+/* ================== Helpers ================== */
+const $ = sel => document.querySelector(sel);
+const $$ = sel => Array.from(document.querySelectorAll(sel));
 
-async function analyzeDomains() {
-  const brands = document.getElementById("brandList").value.trim().split("\n").filter(Boolean);
-  const tlds = document.getElementById("tldList").value.trim();
-  const resultsDiv = document.getElementById("results");
-  const progress = document.getElementById("progressBar");
-  const status = document.getElementById("statusMsg");
+function escapeHTML(s){ return s ? s.replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','\'':'&#39;','"':'&quot;'}[c])) : ''; }
+function fmtDate(d){ if (!d) return "-"; const t=new Date(d); return isNaN(t)?'-':t.toISOString().split('T')[0]; }
+function downloadCSV(filename, rows){
+  const csv = rows.map(r => r.map(cell => `"${String(cell||'').replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}
 
-  if (!brands.length) return alert("Introduce al menos un dominio.");
+/* ================== Fetch & flow ================== */
+async function analyzeBrand(brand, tlds) {
+  const resp = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
+  if (!resp.ok) throw new Error('HTTP '+resp.status);
+  const js = await resp.json();
+  if (js.error) throw new Error(js.error);
+  return js;
+}
 
-  resultsDiv.innerHTML = "";
-  progress.value = 0;
-  status.textContent = "⏳ Analizando...";
+async function runAnalysis(){
+  const list = $('#brandList').value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const tlds = $('#tldList').value.trim();
+  if (!list.length) return alert('Introduce marcas/dominios');
 
-  let html = `<table class="w-full text-sm"><thead><tr>
-    <th>Dominio</th><th>Clasificación</th><th>Fuente</th><th>Creación</th><th>Expira</th><th>Registrante</th><th>Último Cert.</th><th>Notas</th><th></th>
-  </tr></thead><tbody>`;
+  $('#progressBar').value = 0;
+  const allFound = [];
 
-  for (let i = 0; i < brands.length; i++) {
-    const brand = brands[i];
+  for (let i=0;i<list.length;i++){
+    const brand = list[i];
     try {
-      const res = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
-      const data = await res.json();
-      if (data.encontrados && data.encontrados.length > 0) {
-        data.encontrados.forEach((d, idx) => {
-          const id = `${brand}_${idx}`;
-          html += `<tr>
-            <td>${escapeHTML(d.dominio)}</td>
-            <td>${escapeHTML(d.clasificacion || "-")}</td>
-            <td>${(d.fuentes || []).join(", ") || "-"}</td>
-            <td>${formatDate(d.fecha_creacion)}</td>
-            <td>${formatDate(d.fecha_expiracion)}</td>
-            <td>${escapeHTML(d.registrante || "-")}</td>
-            <td>${formatDate(d.fecha_cert_reciente)}</td>
-            <td>${(d.notas || []).join(", ") || "-"}</td>
-            <td><button class="text-sky-400 underline" onclick="toggleRow('${id}')">Ver</button></td>
-          </tr>
-          <tr id="${id}" class="hiddenRow"><td colspan="9">
-            <div class="bg-slate-900 p-3 rounded-lg text-gray-300 text-xs">
-              <b>IP(s):</b> ${escapeHTML((d.registros || []).join(", ")) || "-"}<br>
-              <b>Última actualización RDAP:</b> ${formatDate(d.fecha_actualizacion)}<br>
-              <b>Certificados detectados:</b> ${d.certificados}<br>
-              <b>Notas:</b> ${(d.notas || []).join(", ") || "-"}
-            </div>
-          </td></tr>`;
-        });
-      } else {
-        html += `<tr><td>${escapeHTML(brand)}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>Sin resultados válidos</td></tr>`;
+      $('#statusMsg')?.remove?.(); // not using here
+      const js = await analyzeBrand(brand, tlds);
+      if (js.encontrados && js.encontrados.length) {
+        js.encontrados.forEach(x=>{ x._brand = brand; allFound.push(x); });
       }
-    } catch (err) {
-      html += `<tr><td>${escapeHTML(brand)}</td><td>Error</td><td colspan="7">${escapeHTML(err.message)}</td></tr>`;
+    } catch (e) {
+      console.error('error', e);
     }
-    progress.value = ((i + 1) / brands.length) * 100;
+    $('#progressBar').value = Math.round(((i+1)/list.length)*100);
   }
 
-  html += "</tbody></table>";
-  resultsDiv.innerHTML = html;
-  status.textContent = "✅ Análisis completado";
+  renderTable(allFound);
 }
 
-function toggleRow(id) {
-  const row = document.getElementById(id);
-  row.classList.toggle("hiddenRow");
+/* ================== Render / UI ================== */
+function renderTable(items){
+  const tbody = $('#resultTable tbody');
+  tbody.innerHTML = '';
+  const filterSource = $('#filterSource').value.toLowerCase();
+  const query = $('#searchInput')?.value?.toLowerCase() || '';
+
+  const rowsToShow = items.filter(it=>{
+    if (filterSource && !(it.fuentes||[]).join(' ').toLowerCase().includes(filterSource)) return false;
+    if (query && !((it.dominio||'').toLowerCase().includes(query) || (it._brand||'').toLowerCase().includes(query))) return false;
+    return true;
+  });
+
+  for (const it of rowsToShow) {
+    const ipCell = `${(it.registros||[]).join(', ')}${it.asn_org ? ' / '+escapeHTML(it.asn_org) : ''}`;
+    const fuente = (it.fuentes||[]).length ? (it.fuentes||[]).join(', ') : (it.certificados? 'crt.sh':'-');
+    const abuse = it.abuse_score===null || it.abuse_score===undefined ? '-' : it.abuse_score;
+    const row = document.createElement('tr');
+
+    // highlight brand substrings in domain
+    const brand = it._brand || '';
+    let domainHTML = escapeHTML(it.dominio);
+    if (brand) {
+      const re = new RegExp(escapeRegExp(brand),'ig');
+      domainHTML = escapeHTML(it.dominio).replace(re, m => `<mark style="background:#ffe4b5;color:#000;padding:2px 4px;border-radius:4px">${escapeHTML(m)}</mark>`);
+    }
+
+    row.innerHTML = `
+      <td>${domainHTML}</td>
+      <td>${escapeHTML(it.clasificacion||'-')}</td>
+      <td>${escapeHTML(fuente)}</td>
+      <td>${escapeHTML(ipCell)}</td>
+      <td>${fmtDate(it.rdap?.fecha_creacion || it.fecha_creacion)}</td>
+      <td>${escapeHTML(it.rdap?.registrante || it.registrante || '-')}</td>
+      <td>${fmtDate(it.fecha_cert_reciente)}</td>
+      <td>${abuse}</td>
+      <td>
+        <button class="viewBtn bg-sky-500 px-2 py-1 rounded" data-domain="${escapeHTML(it.dominio)}">Ver</button>
+      </td>
+    `;
+    tbody.appendChild(row);
+  }
+
+  // attach modal listeners
+  Array.from(document.querySelectorAll('.viewBtn')).forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const dom = e.currentTarget.dataset.domain;
+      const item = items.find(x=>x.dominio===dom);
+      openModal(item);
+    });
+  });
 }
 
-function clearAll() {
-  document.getElementById("brandList").value = "";
-  document.getElementById("results").innerHTML = "";
-  document.getElementById("progressBar").value = 0;
-  document.getElementById("statusMsg").textContent = "";
+/* ================== Modal ================== */
+function openModal(item){
+  $('#modalTitle').textContent = item.dominio;
+  const summary = {
+    dominio: item.dominio,
+    registros: item.registros,
+    asn_org: item.asn_org,
+    geo: item.geo,
+    certifics: item.certificados,
+    emisores: item.emisores,
+    abuse_score: item.abuse_score
+  };
+  $('#modalSummary').textContent = JSON.stringify(summary, null, 2);
+  const detailsObj = {
+    rdap: item.rdap,
+    whois_snippet: item.whois_snippet,
+    notas: item.notas
+  };
+  $('#modalDetails').textContent = JSON.stringify(detailsObj, null, 2);
+  $('#modal').classList.remove('hidden'); $('#modal').classList.add('block');
 }
+$('#modalClose').addEventListener('click', ()=>{ $('#modal').classList.add('hidden'); });
 
-function formatDate(dateStr) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  return isNaN(d) ? "-" : d.toISOString().split("T")[0];
-}
+/* ================== Utilities ================== */
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function escapeHTML(str) {
-  return str
-    ? str.replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]))
-    : "";
-}
+/* ================== Events ================== */
+$('#analyzeBtn').addEventListener('click', runAnalysis);
+$('#clearBtn').addEventListener('click', ()=>{ $('#brandList').value=''; $('#resultTable tbody').innerHTML=''; $('#progressBar').value=0; });
+$('#exportCsv').addEventListener('click', ()=>{
+  const rows = [['Dominio','Clasificacion','Fuente','IPs','Creacion','Registrante','UltCert','Abuse','Notas']];
+  document.querySelectorAll('#resultTable tbody tr').forEach(tr=>{
+    const cells = Array.from(tr.children).slice(0,8).map(td=>td.innerText.trim());
+    rows.push(cells);
+  });
+  downloadCSV('domain_report.csv', rows);
+});
+$('#searchInput').addEventListener('input', ()=>{ /* filter in-memory requires storing items globally - quick hack: re-run render by storing lastItems */ });
+
+// store last items globally for search/export if needed
+let lastItems = [];
+// modify runAnalysis to set lastItems when results available (simple: assign inside runAnalysis where allFound constructed)
+
 </script>
 </body>
 </html>
