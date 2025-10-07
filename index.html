@@ -3,48 +3,51 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Domain Threat Intelligence</title>
+  <title>Domain Threat Intelligence — SOC Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
-    body { background:#0b1220; color:#e6eef8; font-family:Inter, Roboto, Arial, sans-serif; padding:20px; }
-    table { width:100%; border-collapse:collapse; font-size:0.9rem }
-    th, td { padding:10px; border-bottom:1px solid rgba(255,255,255,0.07); text-align:left }
-    th { background:rgba(255,255,255,0.05); font-weight:600 }
+    body { background:#0a1120; color:#e6eef8; font-family:Inter, Roboto, Arial, sans-serif; padding:22px; }
+    th, td { padding:10px; border-bottom:1px solid rgba(255,255,255,0.06); text-align:left }
+    th { background:rgba(255,255,255,0.05); font-weight:600; font-size:0.9rem; text-transform:uppercase; letter-spacing:0.03em }
+    td { font-size:0.9rem; }
     mark { background:#ffe4b5; color:#000; border-radius:3px; padding:0 3px; }
-    .risk-low { background:#16a34a; color:white; padding:2px 6px; border-radius:6px; font-size:0.8rem; }
-    .risk-med { background:#d97706; color:white; padding:2px 6px; border-radius:6px; font-size:0.8rem; }
-    .risk-high { background:#b91c1c; color:white; padding:2px 6px; border-radius:6px; font-size:0.8rem; }
+    .risk-low { background:#16a34a; color:white; padding:3px 6px; border-radius:6px; font-size:0.8rem; }
+    .risk-med { background:#d97706; color:white; padding:3px 6px; border-radius:6px; font-size:0.8rem; }
+    .risk-high { background:#b91c1c; color:white; padding:3px 6px; border-radius:6px; font-size:0.8rem; }
     .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,23,0.7); z-index:50; }
     .modal-content { background:#1e293b; padding:20px; border-radius:10px; max-width:90%; max-height:80vh; overflow:auto; }
+    .btn { padding:6px 10px; border-radius:6px; font-weight:500; cursor:pointer; }
+    .btn-primary { background:#0284c7; color:white; }
+    .btn-secondary { background:#334155; color:white; }
+    .btn:hover { opacity:0.85; }
   </style>
 </head>
 <body>
-  <div class="max-w-6xl mx-auto">
-    <h1 class="text-2xl font-bold text-sky-400 mb-1">Domain Threat Intelligence</h1>
-    <p class="text-gray-400 mb-6">Analiza dominios sospechosos (RDAP, WHOIS, ASN, certificados, AbuseIPDB).</p>
+  <div class="max-w-7xl mx-auto">
+    <h1 class="text-3xl font-bold text-sky-400 mb-2">Domain Threat Intelligence — SOC Dashboard</h1>
+    <p class="text-gray-400 mb-6">Analiza dominios sospechosos usando RDAP, WHOIS, ASN, certificados y AbuseIPDB.</p>
 
     <div class="bg-slate-900 p-5 rounded-xl mb-6">
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="col-span-2">
-          <label class="block text-sm text-sky-200 font-semibold mb-1">Marcas / Dominios</label>
+          <label class="block text-sm text-sky-200 font-semibold mb-1">Marcas / Dominios (uno por línea)</label>
           <textarea id="brandList" class="w-full h-28 rounded p-2 bg-slate-800 text-white" placeholder="bancsabadell.com"></textarea>
         </div>
         <div>
           <label class="block text-sm text-sky-200 font-semibold mb-1">TLDs</label>
           <input id="tldList" class="w-full rounded p-2 bg-slate-800 text-white" value=".com,.net,.org,.es,.info"/>
           <div class="flex gap-2 mt-4">
-            <button id="analyzeBtn" class="bg-sky-500 px-3 py-2 rounded">Analizar</button>
-            <button id="clearBtn" class="bg-gray-700 px-3 py-2 rounded">Limpiar</button>
+            <button id="analyzeBtn" class="btn btn-primary">Analizar</button>
+            <button id="clearBtn" class="btn btn-secondary">Limpiar</button>
           </div>
         </div>
       </div>
-
-      <progress id="progressBar" class="w-full mt-4" value="0" max="100"></progress>
+      <progress id="progressBar" class="w-full mt-4 h-2" value="0" max="100"></progress>
     </div>
 
-    <div id="results"></div>
+    <div id="results" class="bg-slate-900 p-3 rounded-xl overflow-auto"></div>
 
-    <!-- Modal de detalle -->
+    <!-- Modal -->
     <div id="detailModal" class="hidden modal">
       <div class="modal-content">
         <div class="flex justify-between items-center mb-3">
@@ -55,6 +58,9 @@
       </div>
     </div>
 
+    <footer class="mt-6 text-sm text-gray-500">
+      Worker activo: <span class="text-sky-300">https://domain-analyzer-worker.gitsearch.workers.dev</span>
+    </footer>
   </div>
 
   <script src="app.js" defer></script>
