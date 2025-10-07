@@ -1,6 +1,6 @@
 /* ============================================================
-   Analizador de Dominios Sospechosos - Frontend JS (v4)
-   Integración completa con RDAP + ASN + crt.sh + AbuseIPDB
+   Analizador de Dominios Sospechosos - Frontend JS (v5)
+   Interfaz SOC con RDAP + ASN + crt.sh + AbuseIPDB + Modal
    ============================================================ */
 
 const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev";
@@ -26,16 +26,16 @@ document.addEventListener("DOMContentLoaded", () => {
     output.innerHTML = `<div class='text-gray-400'>⏳ Analizando dominios...</div>`;
     progress.value = 0;
 
-    let html = `<table><thead>
+    let html = `<table class="w-full"><thead>
       <tr>
         <th>Dominio</th>
         <th>Clasificación</th>
+        <th>Fuente</th>
         <th>IPs / ASN</th>
         <th>Abuse</th>
         <th>Certs</th>
         <th>Creación</th>
         <th>Registrante</th>
-        <th>País</th>
         <th>Acciones</th>
       </tr></thead><tbody>`;
 
@@ -82,11 +82,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 /* ------------------- Utilidades ------------------- */
 function formatDomainRow(d, brand) {
+  const fuentes = d.certificados > 0 ? "crt.sh" : "-";
   const risk = getRiskClass(d.abuse_score);
   const abuseCell = d.abuse_score == null ? "-" : `<span class="${risk.cls}">${risk.label}</span>`;
   const asn = d.asn_org ? " / " + escapeHTML(d.asn_org) : "";
   const ipList = (d.registros || []).join(", ") + asn;
-  const country = d.geo?.country || "-";
   const certs = d.certificados || 0;
 
   // resaltado de marca
@@ -101,13 +101,13 @@ function formatDomainRow(d, brand) {
   return `<tr>
     <td><a href="https://${escapeHTML(d.dominio)}" target="_blank">${domainHTML}</a></td>
     <td>${escapeHTML(d.clasificacion || "-")}</td>
+    <td>${fuentes}</td>
     <td>${escapeHTML(ipList || "-")}</td>
     <td>${abuseCell}</td>
     <td>${certs}</td>
     <td>${formatDate(d.fecha_creacion || d.rdap?.fecha_creacion)}</td>
     <td>${escapeHTML(d.registrante || d.rdap?.registrante || "-")}</td>
-    <td>${escapeHTML(country)}</td>
-    <td><button class="viewBtn bg-sky-600 px-2 py-1 rounded text-white" data-details="${details}">Ver</button></td>
+    <td><button class="viewBtn btn btn-primary" data-details="${details}">Ver</button></td>
   </tr>`;
 }
 
