@@ -1,83 +1,113 @@
-/* ============================================================
-   Analizador de Dominios Sospechosos - Frontend JS (v6)
-   Interfaz SOC con RDAP + ASN + crt.sh + AbuseIPDB + Modal
-   ============================================================ */
 
-const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev";
+
+const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // tu worker
 
 document.addEventListener("DOMContentLoaded", () => {
   const analyzeBtn = document.getElementById("analyzeBtn");
   const clearBtn = document.getElementById("clearBtn");
-  const modal = document.getElementById("detailModal");
-  const modalTitle = document.getElementById("modalTitle");
-  const modalBody = document.getElementById("modalBody");
-  const closeModal = document.getElementById("closeModal");
+  const progress = document.getElementById("progressBar");
+  const output = document.getElementById("results");
   const brandInput = document.getElementById("brandList");
   const tldInput = document.getElementById("tldList");
-  const output = document.getElementById("results");
-  const progress = document.getElementById("progressBar");
 
   analyzeBtn.addEventListener("click", async () => {
-    const brands = brandInput.value.split("\n").map(b => b.trim()).filter(b => b.length > 0);
+    const brand = brandInput.value.trim();
     const tlds = tldInput.value.trim();
 
-    if (!brands.length) return alert("Introduce al menos una marca o dominio");
+    if (!brand) return alert("Introduce una marca o dominio");
 
-    output.innerHTML = `<div class='text-gray-400'>⏳ Analizando dominios...</div>`;
+    output.innerHTML = `
+      <div class="text-gray-400 mb-2">⏳ Analizando: <span class="text-sky-300">${brand}</span></div>
+      <div id="liveLog" class="text-xs text-gray-400 bg-slate-800 p-2 rounded h-32 overflow-auto mb-3"></div>
+      <table id="resultTable" class="w-full text-sm">
+        <thead>
+          <tr>
+            <th>Dominio</th>
+            <th>IPs</th>
+            <th>Certs</th>
+            <th>Abuse</th>
+            <th>Registrante</th>
+            <th>Creación</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    `;
+
+    const logDiv = document.getElementById("liveLog");
+    const tbody = document.querySelector("#resultTable tbody");
+
     progress.value = 0;
 
-    let html = `<table class="w-full"><thead>
-      <tr>
-        <th>Dominio</th>
-        <th>Clasificación</th>
-        <th>Fuente</th>
-        <th>IPs / ASN</th>
-        <th>Abuse</th>
-        <th>Certs</th>
-        <th>Creación</th>
-        <th>Registrante</th>
-        <th>Acciones</th>
-      </tr></thead><tbody>`;
+    const resp = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
+    if (!resp.ok) {
+      output.innerHTML = `<div class="text-red-400">Error HTTP ${resp.status}</div>`;
+      return;
+    }
 
-    for (let i = 0; i < brands.length; i++) {
-      const brand = brands[i];
-      try {
-        const res = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (data.error) throw new Error(data.error);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let total = 0, done = 0, found = 0;
 
-        // tolerar 1 o varios dominios
-        const encontrados = Array.isArray(data.encontrados)
-          ? data.encontrados
-          : data.encontrados
-          ? [data.encontrados]
-          : [];
+    while (true) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) break;
 
-        if (!encontrados.length) {
-          html += `<tr><td>${escapeHTML(brand)}</td><td colspan="8" class="text-gray-400">Sin resultados válidos</td></tr>`;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // guarda lo incompleto
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let msg;
+        try { msg = JSON.parse(line); } catch { continue; }
+
+        // --- manejar eventos ---
+        if (msg.status === "init") {
+          log(`🔍 Iniciando análisis de ${msg.brand}`);
+        } else if (msg.status === "info") {
+          total = msg.msg.match(/\d+/)?.[0] || 0;
+          log(`📦 ${msg.msg}`);
+        } else if (msg.status === "checking") {
+          done++;
+          progress.value = total ? (done / total) * 100 : 0;
+          log(`⏳ Probing ${msg.domain}`);
+        } else if (msg.status === "found") {
+          found++;
+          progress.value = total ? (done / total) * 100 : 0;
+          addRow(msg, tbody);
+          log(`✅ ${msg.domain} (${msg.certs} certs, abuse ${msg.abuse ?? "-"})`);
+        } else if (msg.status === "error") {
+          log(`⚠️ ${msg.domain}: ${msg.msg}`);
+        } else if (msg.status === "progress") {
+          progress.value = (msg.done / msg.total) * 100;
+        } else if (msg.status === "done") {
+          log(`🏁 Finalizado — ${msg.total_found} hallazgos en ${msg.elapsed_s}s`);
         }
-
-        for (const d of encontrados) {
-          html += formatDomainRow(d, brand);
-        }
-
-        progress.value = ((i + 1) / brands.length) * 100;
-      } catch (e) {
-        html += `<tr><td>${escapeHTML(brand)}</td><td colspan="8" class="text-red-400">Error: ${escapeHTML(e.message)}</td></tr>`;
       }
     }
 
-    html += "</tbody></table>";
-    output.innerHTML = html;
-    progress.value = 100;
+    function log(text) {
+      const p = document.createElement("div");
+      p.textContent = text;
+      logDiv.appendChild(p);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
 
-    document.querySelectorAll(".viewBtn").forEach(btn => {
-      btn.addEventListener("click", e => {
-        const details = JSON.parse(decodeURIComponent(e.target.dataset.details));
-        openDetailModal(details);
-      });
-    });
+    function addRow(d, tbody) {
+      const abuse = d.abuse == null ? "-" : `<span class="${getRiskClass(d.abuse).cls}">${getRiskClass(d.abuse).label}</span>`;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><a href="https://${d.domain || d.dominio}" target="_blank" class="text-sky-400">${escapeHTML(d.domain || d.dominio)}</a></td>
+        <td>${(d.ips || d.registros || []).join(", ") || "-"}</td>
+        <td>${d.certs || d.certificados || 0}</td>
+        <td>${abuse}</td>
+        <td>${escapeHTML(d.rdap?.registrante || "-")}</td>
+        <td>${formatDate(d.rdap?.fecha_creacion)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
   });
 
   clearBtn.addEventListener("click", () => {
@@ -85,64 +115,17 @@ document.addEventListener("DOMContentLoaded", () => {
     output.innerHTML = "";
     progress.value = 0;
   });
-
-  closeModal.addEventListener("click", () => modal.classList.add("hidden"));
 });
 
-/* ===================== UTILIDADES ===================== */
-function formatDomainRow(d, brand) {
-  const fuentes = d.certificados > 0 ? "crt.sh" : "-";
-  const risk = getRiskClass(d.abuse_score);
-  const abuseCell = d.abuse_score == null ? "-" : `<span class="${risk.cls}">${risk.label}</span>`;
-  const asn = d.asn_org ? " / " + escapeHTML(d.asn_org) : "";
-  const ipList = (d.registros || []).join(", ") + asn;
-  const certs = d.certificados || 0;
-
-  let domainHTML = escapeHTML(d.dominio);
-  if (brand) {
-    const re = new RegExp(escapeRegExp(brand), "ig");
-    domainHTML = domainHTML.replace(re, m => `<mark>${escapeHTML(m)}</mark>`);
-  }
-
-  const details = encodeURIComponent(JSON.stringify(d));
-
-  return `<tr>
-    <td><a href="https://${escapeHTML(d.dominio)}" target="_blank">${domainHTML}</a></td>
-    <td>${escapeHTML(d.clasificacion || "-")}</td>
-    <td>${fuentes}</td>
-    <td>${escapeHTML(ipList || "-")}</td>
-    <td>${abuseCell}</td>
-    <td>${certs}</td>
-    <td>${formatDate(d.fecha_creacion || d.rdap?.fecha_creacion)}</td>
-    <td>${escapeHTML(d.registrante || d.rdap?.registrante || "-")}</td>
-    <td><button class="viewBtn btn btn-primary" data-details="${details}">Ver</button></td>
-  </tr>`;
+/* ================= UTILIDADES ================= */
+function formatDate(d) {
+  if (!d) return "-";
+  const t = new Date(d);
+  return isNaN(t) ? "-" : t.toISOString().split("T")[0];
 }
 
-function openDetailModal(d) {
-  const modal = document.getElementById("detailModal");
-  const modalTitle = document.getElementById("modalTitle");
-  const modalBody = document.getElementById("modalBody");
-
-  modalTitle.textContent = d.dominio || "Detalles del dominio";
-
-  modalBody.innerHTML = `
-    <table class="w-full text-sm">
-      <tr><td class="text-sky-300 font-semibold">Dominio</td><td>${escapeHTML(d.dominio)}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">IPs</td><td>${escapeHTML((d.registros||[]).join(", ")||"-")}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">ASN</td><td>${escapeHTML(d.asn_org||"-")}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">País</td><td>${escapeHTML(d.geo?.country||"-")}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Registrante</td><td>${escapeHTML(d.registrante||d.rdap?.registrante||"-")}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Creación</td><td>${formatDate(d.fecha_creacion||d.rdap?.fecha_creacion)}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Últ. Certificado</td><td>${formatDate(d.fecha_cert_reciente)}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Certificados</td><td>${d.certificados||0}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Emisores</td><td>${(d.emisores||[]).join("<br>")||"-"}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Abuse Score</td><td>${d.abuse_score!=null?d.abuse_score:"-"}</td></tr>
-      <tr><td class="text-sky-300 font-semibold">Notas</td><td>${(d.notas||[]).join("<br>")||"-"}</td></tr>
-    </table>
-  `;
-
-  modal.classList.remove("hidden");
+function escapeHTML(s) {
+  return s ? s.replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])) : "";
 }
 
 function getRiskClass(score) {
@@ -150,16 +133,4 @@ function getRiskClass(score) {
   if (score >= 60) return { cls: "risk-high", label: `Alto (${score})` };
   if (score >= 30) return { cls: "risk-med", label: `Medio (${score})` };
   return { cls: "risk-low", label: `Bajo (${score})` };
-}
-
-function formatDate(dateStr) {
-  if (!dateStr) return "-";
-  const d = new Date(dateStr);
-  return isNaN(d) ? "-" : d.toISOString().split("T")[0];
-}
-function escapeHTML(str) {
-  return str ? str.replace(/[&<>'"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;" }[c])) : "";
-}
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
