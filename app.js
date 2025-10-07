@@ -55,6 +55,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const chunkSize = 100;
     const fetches = [];
 
+    // ✅ Definimos aquí para evitar errores
+    const chunkProgressMap = {};
+    function updateProgress(chunkIdx, chunkPercent) {
+      chunkProgressMap[chunkIdx] = chunkPercent;
+      const total = Object.values(chunkProgressMap).reduce((a, b) => a + b, 0);
+      progress.value = total;
+    }
+
     for (let i = 0; i < totalChunks; i++) {
       const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
         tlds
@@ -101,8 +109,6 @@ document.addEventListener("DOMContentLoaded", () => {
               log(`🔍 Chunk ${idx + 1}: iniciando (${msg.brand})`);
             } else if (msg.status === "info") {
               log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
-            } else if (msg.status === "checking") {
-              // ya no modificamos aquí la barra
             } else if (msg.status === "progress") {
               const percentPerChunk = 100 / totalChunks;
               const chunkProgress = (msg.done / msg.total) * percentPerChunk;
@@ -135,13 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
       logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    const chunkProgressMap = {};
-    function updateProgress(chunkIdx, chunkPercent) {
-      chunkProgressMap[chunkIdx] = chunkPercent;
-      const total = Object.values(chunkProgressMap).reduce((a, b) => a + b, 0);
-      progress.value = total;
-    }
-
     function addRow(d, tbody, mode) {
       const abuse =
         d.abuse == null
@@ -171,7 +170,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 🔁 Evento global para botones de reanálisis
+  // 🔁 Evento global para botones de reanálisis (full)
   document.addEventListener("click", async (e) => {
     if (e.target.classList.contains("btn-refetch")) {
       const domain = e.target.dataset.domain;
