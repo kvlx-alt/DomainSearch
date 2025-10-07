@@ -19,6 +19,7 @@
     .btn { padding:6px 10px; border-radius:6px; font-weight:500; cursor:pointer; }
     .btn-primary { background:#0284c7; color:white; }
     .btn-secondary { background:#334155; color:white; }
+    .btn-small { font-size:0.75rem; padding:3px 6px; }
     .btn:hover { opacity:0.85; }
   </style>
 </head>
@@ -36,13 +37,14 @@
         <div>
           <label class="block text-sm text-sky-200 font-semibold mb-1">TLDs</label>
           <input id="tldList" class="w-full rounded p-2 bg-slate-800 text-white" value=".com,.net,.org,.es,.info"/>
-<div class="mt-4">
-  <label class="block text-sm text-sky-200 font-semibold mb-1">Exclusiones (palabras o dominios a ignorar, separadas por coma)</label>
-  <input id="whitelistInput" class="w-full rounded p-2 bg-slate-800 text-white" placeholder="ibercaja.es, ecopetrol.com, original, oficial">
-</div>
-
-          
-          <div class="flex gap-2 mt-4">
+          <div class="mt-4">
+            <label class="block text-sm text-sky-200 font-semibold mb-1">Exclusiones (palabras o dominios a ignorar, separadas por coma)</label>
+            <input id="whitelistInput" class="w-full rounded p-2 bg-slate-800 text-white" placeholder="ibercaja.es, ecopetrol.com, original, oficial">
+          </div>
+          <div class="flex gap-2 mt-4 items-center">
+            <label class="text-sm text-gray-300 flex items-center gap-1">
+              <input type="checkbox" id="modeLight" checked> 🔎 Análisis rápido (solo certificados)
+            </label>
             <button id="analyzeBtn" class="btn btn-primary">Analizar</button>
             <button id="clearBtn" class="btn btn-secondary">Limpiar</button>
           </div>
@@ -67,6 +69,28 @@
   </div>
 
   <script src="app.js" defer></script>
+  <script>
+    // 🔁 reanálisis en modo completo
+    document.addEventListener("click", (e) => {
+      if (e.target.classList.contains("btn-refetch")) {
+        const domain = e.target.dataset.domain;
+        const baseUrl = "https://domain-analyzer-worker.gitsearch.workers.dev";
+        const url = `${baseUrl}/?brand=${encodeURIComponent(domain)}&tlds=.com,.net,.org&mode=deep`;
+        e.target.textContent = "⏳ Analizando...";
+        e.target.disabled = true;
+        fetch(url)
+          .then(r => r.text())
+          .then(txt => {
+            e.target.textContent = "✅ Hecho";
+            console.log("Full scan:", domain, txt);
+            alert(`Análisis completo de ${domain} finalizado (ver consola).`);
+          })
+          .catch(err => {
+            e.target.textContent = "❌ Error";
+            console.error(err);
+          });
+      }
+    });
+  </script>
 </body>
 </html>
-
