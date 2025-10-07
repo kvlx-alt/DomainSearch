@@ -1,5 +1,3 @@
-
-
 const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // tu worker
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -36,59 +34,74 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const logDiv = document.getElementById("liveLog");
     const tbody = document.querySelector("#resultTable tbody");
-
     progress.value = 0;
 
     const whitelist = document.getElementById("whitelistInput")?.value.trim() || "";
-    const resp = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}&whitelist=${encodeURIComponent(whitelist)}`);
+    const totalChunks = 4; // 400 / 100
+    const fetches = [];
 
-    if (!resp.ok) {
-      output.innerHTML = `<div class="text-red-400">Error HTTP ${resp.status}</div>`;
-      return;
+    for (let i = 0; i < totalChunks; i++) {
+      const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
+        tlds
+      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=100`;
+      fetches.push(fetch(url));
     }
 
-    const reader = resp.body.getReader();
     const decoder = new TextDecoder();
-    let buffer = "";
-    let total = 0, done = 0, found = 0;
+    let total = 0,
+      done = 0,
+      found = 0;
 
-    while (true) {
-      const { done: streamDone, value } = await reader.read();
-      if (streamDone) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop(); // guarda lo incompleto
-
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let msg;
-        try { msg = JSON.parse(line); } catch { continue; }
-
-        // --- manejar eventos ---
-        if (msg.status === "init") {
-          log(`🔍 Iniciando análisis de ${msg.brand}`);
-        } else if (msg.status === "info") {
-          total = msg.msg.match(/\d+/)?.[0] || 0;
-          log(`📦 ${msg.msg}`);
-        } else if (msg.status === "checking") {
-          done++;
-          progress.value = total ? (done / total) * 100 : 0;
-          log(`⏳ Probing ${msg.domain}`);
-        } else if (msg.status === "found") {
-          found++;
-          progress.value = total ? (done / total) * 100 : 0;
-          addRow(msg, tbody);
-          log(`✅ ${msg.domain} (${msg.certs} certs, abuse ${msg.abuse ?? "-"})`);
-        } else if (msg.status === "error") {
-          log(`⚠️ ${msg.domain}: ${msg.msg}`);
-        } else if (msg.status === "progress") {
-          progress.value = (msg.done / msg.total) * 100;
-        } else if (msg.status === "done") {
-          log(`🏁 Finalizado — ${msg.total_found} hallazgos en ${msg.elapsed_s}s`);
+    // 🔄 Procesar todos los streams en paralelo
+    await Promise.all(
+      fetches.map(async (resp, idx) => {
+        if (!resp.ok) {
+          log(`❌ Chunk ${idx + 1} error HTTP ${resp.status}`);
+          return;
         }
-      }
-    }
+
+        const reader = resp.body.getReader();
+        let buffer = "";
+
+        while (true) {
+          const { done: streamDone, value } = await reader.read();
+          if (streamDone) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            let msg;
+            try {
+              msg = JSON.parse(line);
+            } catch {
+              continue;
+            }
+
+            if (msg.status === "init") {
+              log(`🔍 Chunk ${idx + 1}: iniciando (${msg.brand})`);
+            } else if (msg.status === "info") {
+              log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
+            } else if (msg.status === "checking") {
+              done++;
+              progress.value = total ? (done / total) * 100 : 0;
+            } else if (msg.status === "found") {
+              found++;
+              addRow(msg, tbody);
+              log(`✅ ${msg.domain} (${msg.certs} certs, abuse ${msg.abuse ?? "-"})`);
+            } else if (msg.status === "error") {
+              log(`⚠️ ${msg.domain}: ${msg.msg}`);
+            } else if (msg.status === "done") {
+              log(`🏁 Chunk ${idx + 1} finalizado — ${msg.total_found} hallazgos`);
+            }
+          }
+        }
+      })
+    );
+
+    log(`✅ Todos los chunks completados. Total hallazgos: ${found}`);
 
     function log(text) {
       const p = document.createElement("div");
@@ -98,10 +111,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function addRow(d, tbody) {
-      const abuse = d.abuse == null ? "-" : `<span class="${getRiskClass(d.abuse).cls}">${getRiskClass(d.abuse).label}</span>`;
+      const abuse =
+        d.abuse == null
+          ? "-"
+          : `<span class="${getRiskClass(d.abuse).cls}">${getRiskClass(d.abuse).label}</span>`;
       const tr = document.createElement("tr");
       tr.innerHTML = `
-        <td><a href="https://${d.domain || d.dominio}" target="_blank" class="text-sky-400">${escapeHTML(d.domain || d.dominio)}</a></td>
+        <td><a href="https://${d.domain || d.dominio}" target="_blank" class="text-sky-400">${escapeHTML(
+        d.domain || d.dominio
+      )}</a></td>
         <td>${(d.ips || d.registros || []).join(", ") || "-"}</td>
         <td>${d.certs || d.certificados || 0}</td>
         <td>${abuse}</td>
@@ -127,7 +145,9 @@ function formatDate(d) {
 }
 
 function escapeHTML(s) {
-  return s ? s.replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])) : "";
+  return s
+    ? s.replace(/[&<>'"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c]))
+    : "";
 }
 
 function getRiskClass(score) {
@@ -136,4 +156,3 @@ function getRiskClass(score) {
   if (score >= 30) return { cls: "risk-med", label: `Medio (${score})` };
   return { cls: "risk-low", label: `Bajo (${score})` };
 }
-
