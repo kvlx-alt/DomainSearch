@@ -1,56 +1,181 @@
-
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Analizador de Dominios Sospechosos</title>
-  <link rel="stylesheet" href="styles.css" />
+
+  <!-- TailwindCSS desde CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background-color: #0f172a;
+      color: #e2e8f0;
+      font-family: "Inter", sans-serif;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      text-align: left;
+    }
+    th {
+      background-color: rgba(255, 255, 255, 0.1);
+      font-weight: 600;
+    }
+    tr:hover {
+      background-color: rgba(255, 255, 255, 0.05);
+    }
+  </style>
 </head>
-<body>
-  <div class="container">
-    <header>
-      <h1>Analizador de Dominios Sospechosos (GitHub Pages)</h1>
-      <p class="muted">Genera permutaciones tipo typosquatting y muestra solo las que resuelven DNS. Usa crt.sh y RDAP.</p>
-    </header>
+<body class="min-h-screen p-6">
 
-    <section class="controls">
-      <label>Lista de marcas / dominios (una por línea):</label>
-      <textarea id="brandsInput" placeholder="bershka.com&#10;zara.com"></textarea>
-      <div class="row">
-        <div>
-          <label>TLDs a probar (coma separadas):</label>
-          <input id="tldsInput" value=".com,.net,.org,.es,.info" />
-        </div>
-        <div class="buttons">
-          <button id="btnRun" class="primary">Analizar</button>
-          <button id="btnClear">Limpiar</button>
-        </div>
+  <div class="max-w-6xl mx-auto">
+    <h1 class="text-3xl font-bold mb-2 text-sky-400">🔍 Analizador de Dominios Sospechosos</h1>
+    <p class="text-gray-400 mb-6">Detecta posibles dominios de phishing o abuso de marca. Genera variaciones tipo <b>typosquatting</b>, analiza RDAP y certificados de <b>crt.sh</b>, y muestra solo los que resuelven DNS.</p>
+
+    <div class="bg-slate-800 rounded-2xl p-6 shadow-lg mb-6">
+      <label class="block mb-2 font-semibold text-sky-300">Lista de marcas / dominios (uno por línea):</label>
+      <textarea id="brandList" rows="4" class="w-full rounded-md p-2 bg-slate-900 text-gray-100 border border-slate-700 resize-y" placeholder="bancsabadell.com&#10;zara.com"></textarea>
+
+      <label class="block mt-4 mb-2 font-semibold text-sky-300">TLDs a probar (separados por coma):</label>
+      <input id="tldList" type="text" class="w-full rounded-md p-2 bg-slate-900 text-gray-100 border border-slate-700" value=".com,.net,.org,.es,.info" />
+
+      <div class="mt-5 flex items-center gap-4">
+        <button id="analyzeBtn" class="bg-sky-500 hover:bg-sky-600 text-white font-semibold px-6 py-2 rounded-lg shadow">Analizar</button>
+        <button id="clearBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-semibold px-6 py-2 rounded-lg">Limpiar</button>
       </div>
-      <div id="progressWrap" class="progress-wrap" hidden>
-        <div id="progressText">Preparando...</div>
-        <div class="progressbar"><div id="progressBar" style="width:0%"></div></div>
-      </div>
-      <div id="log" class="log" aria-live="polite"></div>
-    </section>
 
-    <section>
-      <table id="resultTable" class="result-table">
-        <thead>
-          <tr>
-            <th>Dominio</th><th>Tipologías</th><th>Clasificación</th><th>Fuentes</th>
-            <th>Fecha creación</th><th>Registrante</th><th>Notas</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
+      <progress id="progressBar" value="0" max="100" class="mt-4 w-full h-3"></progress>
+      <p id="statusMsg" class="text-gray-400 mt-2"></p>
+    </div>
 
-    <footer>
-      <small>Nota: llamadas a crt.sh / rdap.org y DoH públicas pueden tener límites de tasa y CORS.</small>
+    <div id="results" class="bg-slate-800 rounded-2xl p-4 shadow overflow-x-auto max-h-[70vh]"></div>
+
+    <footer class="text-gray-500 text-sm text-center mt-8">
+      © 2025 Analizador de Dominios — powered by Cloudflare Workers y crt.sh
     </footer>
   </div>
 
-  <script src="app.js"></script>
+  <script>
+    /* ============================================================
+       Frontend principal - analizador.js inline
+       ============================================================ */
+
+    const WORKER_URL = "https://domain-analyzer-worker.gitsearch.workers.dev"; // ← tu Worker
+
+    const analyzeBtn = document.getElementById("analyzeBtn");
+    const clearBtn = document.getElementById("clearBtn");
+    const brandInput = document.getElementById("brandList");
+    const tldInput = document.getElementById("tldList");
+    const output = document.getElementById("results");
+    const progress = document.getElementById("progressBar");
+    const statusMsg = document.getElementById("statusMsg");
+
+    analyzeBtn.addEventListener("click", async () => {
+      const brands = brandInput.value
+        .split("\n")
+        .map(b => b.trim())
+        .filter(b => b.length > 0);
+      const tlds = tldInput.value.trim();
+
+      if (!brands.length) {
+        alert("Introduce al menos una marca o dominio para analizar.");
+        return;
+      }
+
+      output.innerHTML = "";
+      progress.value = 0;
+      statusMsg.textContent = "⏳ Iniciando análisis...";
+
+      let html = `<table><thead>
+        <tr>
+          <th>Dominio</th>
+          <th>Tipologías</th>
+          <th>Clasificación</th>
+          <th>Fuentes</th>
+          <th>Fecha creación</th>
+          <th>Expira</th>
+          <th>Registrante</th>
+          <th>Último certificado</th>
+          <th>Notas</th>
+        </tr></thead><tbody>`;
+
+      for (let i = 0; i < brands.length; i++) {
+        const brand = brands[i];
+        try {
+          statusMsg.textContent = `Analizando ${brand}... (${i + 1}/${brands.length})`;
+
+          const res = await fetch(`${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(tlds)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          if (data.error) throw new Error(data.error);
+
+          if (Array.isArray(data.encontrados) && data.encontrados.length > 0) {
+            for (const d of data.encontrados) html += formatDomainRow(d);
+          } else {
+            html += `<tr><td>${brand}</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>Sin resultados válidos</td></tr>`;
+          }
+        } catch (err) {
+          html += `<tr><td>${brand}</td><td>-</td><td>Error</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>${escapeHTML(err.message)}</td></tr>`;
+        }
+        progress.value = ((i + 1) / brands.length) * 100;
+      }
+
+      html += "</tbody></table>";
+      output.innerHTML = html;
+      statusMsg.textContent = "✅ Análisis completado";
+      progress.value = 100;
+    });
+
+    clearBtn.addEventListener("click", () => {
+      brandInput.value = "";
+      output.innerHTML = "";
+      progress.value = 0;
+      statusMsg.textContent = "";
+    });
+
+    /* ------------------- Utilidades ------------------- */
+
+    function formatDomainRow(d) {
+      const tipologia = "Typosquatting";
+      const fuentes = d.certificados > 0 ? "crt.sh" : "-";
+
+      return `<tr>
+        <td><a href="https://${escapeHTML(d.dominio)}" target="_blank" class="text-sky-400 hover:underline">${escapeHTML(d.dominio)}</a></td>
+        <td>${tipologia}</td>
+        <td>${escapeHTML(d.clasificacion || "-")}</td>
+        <td>${fuentes}</td>
+        <td>${formatDate(d.fecha_creacion)}</td>
+        <td>${formatDate(d.fecha_expiracion)}</td>
+        <td>${escapeHTML(d.registrante || "-")}</td>
+        <td>${formatDate(d.fecha_cert_reciente)}</td>
+        <td>${d.notas && d.notas.length ? escapeHTML(d.notas.join(", ")) : "-"}</td>
+      </tr>`;
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return "-";
+      try {
+        const d = new Date(dateStr);
+        if (isNaN(d)) return "-";
+        return d.toISOString().split("T")[0];
+      } catch {
+        return "-";
+      }
+    }
+
+    function escapeHTML(str) {
+      return str
+        ? str.replace(/[&<>'"]/g, c =>
+            ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[c])
+          )
+        : "";
+    }
+  </script>
 </body>
 </html>
