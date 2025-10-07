@@ -8,18 +8,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const brandInput = document.getElementById("brandList");
   const tldInput = document.getElementById("tldList");
 
-  // 👇 NUEVO: Checkbox para elegir modo
+  // 👇 Checkbox modo rápido
   const modeToggle = document.createElement("label");
   modeToggle.className = "text-sm text-gray-300 block mb-2";
   modeToggle.innerHTML = `
-    <input type="checkbox" id="modeLight" checked> 🔎 Análisis rápido (solo DNS + Certificados)
+    <input type="checkbox" id="modeLight" checked> 🔎 Análisis rápido (solo certificados)
   `;
   tldInput.parentNode.appendChild(modeToggle);
 
   analyzeBtn.addEventListener("click", async () => {
     const brand = brandInput.value.trim();
     const tlds = tldInput.value.trim();
-    const lightMode = document.getElementById("modeLight")?.checked ? "light" : "deep"; // 👈 nuevo
+    const lightMode = document.getElementById("modeLight")?.checked ? "light" : "deep";
 
     if (!brand) return alert("Introduce una marca o dominio");
 
@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <th>Abuse</th>
             <th>Registrante</th>
             <th>Creación</th>
+            <th></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -51,7 +52,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const fetches = [];
 
     for (let i = 0; i < totalChunks; i++) {
-      // 👇 se añade mode al URL
       const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
         tlds
       )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}&mode=${lightMode}`;
@@ -101,7 +101,7 @@ document.addEventListener("DOMContentLoaded", () => {
               progress.value += 0.1;
             } else if (msg.status === "found") {
               found++;
-              addRow(msg, tbody);
+              addRow(msg, tbody, lightMode);
               log(`✅ ${msg.domain} (${msg.certs} certs, abuse ${msg.abuse ?? "-"})`);
             } else if (msg.status === "error") {
               log(`⚠️ ${msg.domain}: ${msg.msg}`);
@@ -126,12 +126,20 @@ document.addEventListener("DOMContentLoaded", () => {
       logDiv.scrollTop = logDiv.scrollHeight;
     }
 
-    function addRow(d, tbody) {
+    function addRow(d, tbody, mode) {
       const abuse =
         d.abuse == null
           ? "-"
           : `<span class="${getRiskClass(d.abuse).cls}">${getRiskClass(d.abuse).label}</span>`;
       const tr = document.createElement("tr");
+
+      const refetchBtn =
+        mode === "light"
+          ? `<button class="btn btn-small btn-secondary btn-refetch" data-domain="${escapeHTML(
+              d.domain || d.dominio
+            )}">🔍 Analizar full</button>`
+          : "";
+
       tr.innerHTML = `
         <td><a href="https://${d.domain || d.dominio}" target="_blank" class="text-sky-400">${escapeHTML(
         d.domain || d.dominio
@@ -141,8 +149,30 @@ document.addEventListener("DOMContentLoaded", () => {
         <td>${abuse}</td>
         <td>${escapeHTML(d.rdap?.registrante || "-")}</td>
         <td>${formatDate(d.rdap?.fecha_creacion)}</td>
+        <td>${refetchBtn}</td>
       `;
       tbody.appendChild(tr);
+    }
+  });
+
+  // 🔁 Evento global para botones de reanálisis
+  document.addEventListener("click", async (e) => {
+    if (e.target.classList.contains("btn-refetch")) {
+      const domain = e.target.dataset.domain;
+      e.target.textContent = "⏳ Analizando...";
+      e.target.disabled = true;
+
+      const url = `${WORKER_URL}/?brand=${encodeURIComponent(domain)}&tlds=.com,.net,.org,.es,.info&mode=deep`;
+      try {
+        const resp = await fetch(url);
+        const text = await resp.text();
+        e.target.textContent = "✅ Hecho";
+        console.log("Full analysis result:", domain, text);
+        alert(`Análisis completo de ${domain} finalizado. Revisa la consola.`);
+      } catch (err) {
+        console.error(err);
+        e.target.textContent = "❌ Error";
+      }
     }
   });
 
@@ -172,4 +202,3 @@ function getRiskClass(score) {
   if (score >= 30) return { cls: "risk-med", label: `Medio (${score})` };
   return { cls: "risk-low", label: `Bajo (${score})` };
 }
-
