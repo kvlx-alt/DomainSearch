@@ -37,35 +37,38 @@ document.addEventListener("DOMContentLoaded", () => {
     progress.value = 0;
 
     const whitelist = document.getElementById("whitelistInput")?.value.trim() || "";
-    const totalChunks = 4; // 400 / 100
+    const totalChunks = 4;
+    const chunkSize = 100;
     const fetches = [];
 
     for (let i = 0; i < totalChunks; i++) {
       const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
         tlds
-      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=100`;
-      fetches.push(fetch(url));
+      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}`;
+      fetches.push(runChunk(url, i));
     }
 
-    const decoder = new TextDecoder();
-    let total = 0,
-      done = 0,
-      found = 0;
+    const results = await Promise.all(fetches);
+    const totalFound = results.reduce((acc, val) => acc + (val || 0), 0);
+    log(`✅ Todos los chunks completados. Total hallazgos: ${totalFound}`);
 
-    // 🔄 Procesar todos los streams en paralelo
-    await Promise.all(
-      fetches.map(async (resp, idx) => {
-        if (!resp.ok) {
-          log(`❌ Chunk ${idx + 1} error HTTP ${resp.status}`);
-          return;
+    async function runChunk(url, idx) {
+      try {
+        const resp = await fetch(url);
+        if (!resp || !resp.ok) {
+          log(`❌ Chunk ${idx + 1} error HTTP ${resp?.status ?? "sin respuesta"}`);
+          console.error("Error en chunk", idx + 1, resp);
+          return 0;
         }
 
         const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
         let buffer = "";
+        let found = 0;
 
         while (true) {
-          const { done: streamDone, value } = await reader.read();
-          if (streamDone) break;
+          const { done, value } = await reader.read();
+          if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
@@ -85,8 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (msg.status === "info") {
               log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
             } else if (msg.status === "checking") {
-              done++;
-              progress.value = total ? (done / total) * 100 : 0;
+              progress.value += 0.1; // progreso simple
             } else if (msg.status === "found") {
               found++;
               addRow(msg, tbody);
@@ -98,10 +100,14 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
         }
-      })
-    );
 
-    log(`✅ Todos los chunks completados. Total hallazgos: ${found}`);
+        return found;
+      } catch (err) {
+        log(`💥 Chunk ${idx + 1} falló: ${err.message}`);
+        console.error("Error en chunk", idx + 1, err);
+        return 0;
+      }
+    }
 
     function log(text) {
       const p = document.createElement("div");
