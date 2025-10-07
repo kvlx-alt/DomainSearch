@@ -7,6 +7,10 @@ document.addEventListener("DOMContentLoaded", () => {
   const output = document.getElementById("results");
   const brandInput = document.getElementById("brandList");
   const tldInput = document.getElementById("tldList");
+  const modal = document.getElementById("detailModal");
+  const modalTitle = document.getElementById("modalTitle");
+  const modalBody = document.getElementById("modalBody");
+  const closeModalBtn = document.getElementById("closeModal");
 
   // 👇 Checkbox modo rápido
   const modeToggle = document.createElement("label");
@@ -98,7 +102,12 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (msg.status === "info") {
               log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
             } else if (msg.status === "checking") {
-              progress.value += 0.1;
+              // ya no modificamos aquí la barra
+            } else if (msg.status === "progress") {
+              const percentPerChunk = 100 / totalChunks;
+              const chunkProgress = (msg.done / msg.total) * percentPerChunk;
+              updateProgress(idx, chunkProgress);
+              log(`⏩ Chunk ${idx + 1}: ${msg.done}/${msg.total} dominios procesados`);
             } else if (msg.status === "found") {
               found++;
               addRow(msg, tbody, lightMode);
@@ -124,6 +133,13 @@ document.addEventListener("DOMContentLoaded", () => {
       p.textContent = text;
       logDiv.appendChild(p);
       logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    const chunkProgressMap = {};
+    function updateProgress(chunkIdx, chunkPercent) {
+      chunkProgressMap[chunkIdx] = chunkPercent;
+      const total = Object.values(chunkProgressMap).reduce((a, b) => a + b, 0);
+      progress.value = total;
     }
 
     function addRow(d, tbody, mode) {
@@ -167,8 +183,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const resp = await fetch(url);
         const text = await resp.text();
         e.target.textContent = "✅ Hecho";
-        console.log("Full analysis result:", domain, text);
-        alert(`Análisis completo de ${domain} finalizado. Revisa la consola.`);
+        showFullModal(domain, text);
       } catch (err) {
         console.error(err);
         e.target.textContent = "❌ Error";
@@ -181,6 +196,31 @@ document.addEventListener("DOMContentLoaded", () => {
     output.innerHTML = "";
     progress.value = 0;
   });
+
+  closeModalBtn.addEventListener("click", () => {
+    modal.classList.add("hidden");
+  });
+
+  function showFullModal(domain, ndjsonText) {
+    const lines = ndjsonText.trim().split("\n");
+    const data = lines.map(l => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean);
+    const encontrados = data.find(x => x.status === "done")?.encontrados || [];
+
+    modalTitle.textContent = `Análisis completo: ${domain}`;
+    modalBody.innerHTML = encontrados.length
+      ? encontrados.map(d => `
+        <div class="border-b border-slate-700 py-2">
+          <div class="font-semibold text-sky-300">${d.dominio}</div>
+          <div>IP: ${d.registros.join(", ") || "-"}</div>
+          <div>Certificados: ${d.certificados}</div>
+          <div>Registrante: ${escapeHTML(d.rdap?.registrante || "-")}</div>
+          <div>Fecha creación: ${formatDate(d.rdap?.fecha_creacion)}</div>
+        </div>
+      `).join("")
+      : "<div class='text-gray-400'>No se encontraron hallazgos adicionales.</div>";
+
+    modal.classList.remove("hidden");
+  }
 });
 
 /* ================= UTILIDADES ================= */
