@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   modeToggle.innerHTML = `
     <input type="checkbox" id="modeLight" checked> 🔎 Análisis rápido (solo DNS + Certificados)
   `;
-  output.parentNode.insertBefore(modeToggle, analyzeBtn);
+  tldInput.parentNode.appendChild(modeToggle);
 
   analyzeBtn.addEventListener("click", async () => {
     const brand = brandInput.value.trim();
@@ -172,3 +172,4 @@ function getRiskClass(score) {
   if (score >= 30) return { cls: "risk-med", label: `Medio (${score})` };
   return { cls: "risk-low", label: `Bajo (${score})` };
 }
+
