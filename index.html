@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Domain Threat Intelligence — SOC Dashboard</title>
+  <title>Domain Threat Intelligence</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     body { background:#0a1120; color:#e6eef8; font-family:Inter, Roboto, Arial, sans-serif; padding:22px; }
@@ -15,7 +15,7 @@
     .risk-med { background:#d97706; color:white; padding:3px 6px; border-radius:6px; font-size:0.8rem; }
     .risk-high { background:#b91c1c; color:white; padding:3px 6px; border-radius:6px; font-size:0.8rem; }
     .modal { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(2,6,23,0.7); z-index:50; }
-    .modal-content { background:#1e293b; padding:20px; border-radius:10px; max-width:90%; max-height:80vh; overflow:auto; }
+    .modal-content { background:#1e293b; padding:20px; border-radius:10px; max-width:800px; width:90%; max-height:80vh; overflow:auto; }
     .btn { padding:6px 10px; border-radius:6px; font-weight:500; cursor:pointer; }
     .btn-primary { background:#0284c7; color:white; }
     .btn-secondary { background:#334155; color:white; }
@@ -24,7 +24,7 @@
 </head>
 <body>
   <div class="max-w-7xl mx-auto">
-    <h1 class="text-3xl font-bold text-sky-400 mb-2">Domain Threat Intelligence — SOC Dashboard</h1>
+    <h1 class="text-3xl font-bold text-sky-400 mb-2">Domain Threat Intelligence</h1>
     <p class="text-gray-400 mb-6">Analiza dominios sospechosos usando RDAP, WHOIS, ASN, certificados y AbuseIPDB.</p>
 
     <div class="bg-slate-900 p-5 rounded-xl mb-6">
@@ -54,13 +54,10 @@
           <h3 id="modalTitle" class="text-lg font-semibold text-sky-300"></h3>
           <button id="closeModal" class="text-gray-400 hover:text-white">✕</button>
         </div>
-        <pre id="modalBody" class="text-sm text-gray-200 bg-slate-800 p-3 rounded"></pre>
+        <div id="modalBody" class="text-sm text-gray-200"></div>
       </div>
     </div>
 
-    <footer class="mt-6 text-sm text-gray-500">
-      Worker activo: <span class="text-sky-300">https://domain-analyzer-worker.gitsearch.workers.dev</span>
-    </footer>
   </div>
 
   <script src="app.js" defer></script>
