@@ -20,10 +20,23 @@ document.addEventListener("DOMContentLoaded", () => {
   `;
   tldInput.parentNode.appendChild(modeToggle);
 
+  // 👇 Selector de searchMode
+  const searchModeSelect = document.createElement("label");
+  searchModeSelect.className = "text-sm text-gray-300 block mb-2";
+  searchModeSelect.innerHTML = `
+    <select id="searchModeSelect" class="bg-slate-800 text-gray-200 p-1 rounded">
+      <option value="permutations" selected>🔁 Permutaciones</option>
+      <option value="keyword">🔎 Keyword (certs)</option>
+      <option value="both">🧠 Ambos</option>
+    </select>
+  `;
+  tldInput.parentNode.appendChild(searchModeSelect);
+
   analyzeBtn.addEventListener("click", async () => {
     const brand = brandInput.value.trim();
     const tlds = tldInput.value.trim();
     const lightMode = document.getElementById("modeLight")?.checked ? "light" : "deep";
+    const searchMode = document.getElementById("searchModeSelect")?.value || "permutations";
 
     if (!brand) return alert("Introduce una marca o dominio");
 
@@ -63,11 +76,30 @@ document.addEventListener("DOMContentLoaded", () => {
       progress.value = total;
     }
 
-    for (let i = 0; i < totalChunks; i++) {
-      const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
-        tlds
-      )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}&mode=${lightMode}`;
-      fetches.push(runChunk(url, i));
+    // 👉 Control según searchMode
+    if (searchMode === "keyword") {
+      // 🔸 Solo 1 petición sin chunks
+      const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&mode=${lightMode}&searchMode=keyword`;
+      fetches.push(runChunk(url, 0));
+    } else if (searchMode === "both") {
+      // 🔸 Primero keyword (1 chunk), luego permutaciones
+      const keywordUrl = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&mode=${lightMode}&searchMode=keyword`;
+      fetches.push(runChunk(keywordUrl, 0));
+
+      for (let i = 0; i < totalChunks; i++) {
+        const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
+          tlds
+        )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}&mode=${lightMode}&searchMode=permutations`;
+        fetches.push(runChunk(url, i + 1));
+      }
+    } else {
+      // 🔸 Solo permutaciones (actual)
+      for (let i = 0; i < totalChunks; i++) {
+        const url = `${WORKER_URL}/?brand=${encodeURIComponent(brand)}&tlds=${encodeURIComponent(
+          tlds
+        )}&whitelist=${encodeURIComponent(whitelist)}&chunk=${i}&chunkSize=${chunkSize}&mode=${lightMode}&searchMode=permutations`;
+        fetches.push(runChunk(url, i));
+      }
     }
 
     const results = await Promise.all(fetches);
@@ -110,7 +142,7 @@ document.addEventListener("DOMContentLoaded", () => {
             } else if (msg.status === "info") {
               log(`📦 Chunk ${idx + 1}: ${msg.msg}`);
             } else if (msg.status === "progress") {
-              const percentPerChunk = 100 / totalChunks;
+              const percentPerChunk = 100 / (searchMode === "keyword" ? 1 : (searchMode === "both" ? totalChunks + 1 : totalChunks));
               const chunkProgress = (msg.done / msg.total) * percentPerChunk;
               updateProgress(idx, chunkProgress);
               log(`⏩ Chunk ${idx + 1}: ${msg.done}/${msg.total} dominios procesados`);
